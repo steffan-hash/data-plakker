@@ -1,0 +1,21 @@
+# Secrets — nooit committen
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Node (indien van toepassing)
+node_modules/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Lokale data (indien van toepassing per project — pas aan in PROJECT.md context)
