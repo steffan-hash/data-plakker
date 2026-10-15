@@ -29,17 +29,18 @@ klembord, zonder venster tussendoor. Plakken in:
 - Installer zodat collega's het ook kunnen gebruiken.
 
 ## Status
-Techkeuze: PowerShell + Windows-OCR (alles zit al in Windows, niets te
-installeren). Zie `Log.md` voor wat er gebouwd is.
+Techkeuze: een klein C#-programma (`.exe`, ~20 MB geheugen) dat op de
+achtergrond op de sneltoets wacht, met Windows-OCR. Gecompileerd met de
+compiler die in Windows zit — niets te installeren. (Eerste versie was
+PowerShell; vervangen op 2026-10-15 voor directe reactie op de sneltoets.)
+Zie `Log.md` voor wat er gebouwd is.
 
 ## Belangrijkste commando's
 ```
-# Sneltoets (Ctrl+Alt+P) eenmalig installeren
-powershell -ExecutionPolicy Bypass -File scripts\install-sneltoets.ps1
-# Zonder sneltoets starten
-powershell -ExecutionPolicy Bypass -File scripts\data-plakker.ps1
-# Test van de OCR + tabelherkenning
-powershell -ExecutionPolicy Bypass -File scripts\test-layout.ps1
+# Bouwen + testen + installeren (start bij inloggen); na elke codewijziging
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+# Alleen de controles draaien
+bin\DataPlakker.exe --selftest | Out-Host
 ```
 
 ## Context die niet vanzelfsprekend is

@@ -14,6 +14,33 @@ Voorbeeld van een entry:
 **Volgende stap:** [wat er logisch als eerste opgepakt wordt]
 -->
 
+## Tussentijdse update 2026-10-15 — van PowerShell naar .exe op de achtergrond
+**Wat gedaan:** op verzoek van Steffan (puur performance) herschreven als
+één C#-bestand `src/DataPlakker.cs`, gecompileerd met de `csc.exe` die in
+Windows zit (C# 5, geen ontwikkelpakket). Draait onzichtbaar met icoon in
+het systeemvak, luistert via `RegisterHotKey` naar Ctrl+Alt+P.
+- Gemeten geheugen in rust: ~22 MB privé (PowerShell-achtergrond zou
+  ~67 MB zijn, waarvan 56 MB PowerShell zelf).
+- Zelfde logica als de PowerShell-versie (kolomgoten, 4x vergroten,
+  spatieherstel, CF_HTML-klembord). Tests zitten in de .exe:
+  `--selftest`, 16 controles, alle groen.
+- OCR-koppeling: de standaard WinRT-bridge vraagt een SDK die hier niet
+  staat; omweg = ruwe pixels via `SoftwareBitmap.CreateCopyFromBuffer` en
+  zelf wachten op `IAsyncOperation` (ook sneller: geen PNG-tussenstap).
+- `scripts/install.ps1`: stopt oude versie, compileert naar `bin/`, draait
+  selftest, verwijdert de oude Startmenu-snelkoppeling, zet snelkoppeling
+  in Opstarten en start de .exe.
+- **Verwijderd:** `scripts/data-plakker.ps1`, `layout.ps1`,
+  `test-layout.ps1`, `install-sneltoets.ps1` (vervangen; staan in git-historie).
+- `PROJECT.md`: alleen Status (techkeuze) en commando's bijgewerkt, op
+  basis van Steffans keuze voor de .exe.
+**Valkuil (gebeurd):** Verkenner hield Ctrl+Alt+P vast van de verwijderde
+oude snelkoppeling → .exe meldde "al in gebruik". Opgelost door Verkenner
+te herstarten (met akkoord Steffan).
+**Nog open:** selectiekader met de echte sneltoets nog door Steffan te
+proberen; geheugen na de eerste OCR niet gemeten; eigen icoon (nu het
+standaard Windows-programma-icoon).
+
 ## Tussentijdse update 2026-10-15 — selectiekader sneller in beeld
 **Wat gedaan:** `data-plakker.ps1` gemeten van processtart tot kader in
 beeld: ~0,5–0,65 s → ~0,37 s. Twee oorzaken weggehaald:

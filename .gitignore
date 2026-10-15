@@ -19,3 +19,6 @@ node_modules/
 .idea/
 
 # Lokale data (indien van toepassing per project — pas aan in PROJECT.md context)
+
+# Gebouwde .exe (maak opnieuw met scripts\install.ps1)
+bin/
