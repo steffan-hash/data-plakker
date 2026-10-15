@@ -42,6 +42,18 @@ static class Program
 
         if (args.Contains("--selftest")) return SelfTest.Run();
 
+        // "--ocr <afbeelding>": leest een opgeslagen screenshot uit en schrijft
+        // de cellen tab-gescheiden naar de uitvoer. Om de herkenning te meten
+        // op echte schermen, zonder selectiekader.
+        if (args.Length == 2 && args[0] == "--ocr")
+        {
+            using (var outp = new System.IO.StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)))
+            using (var bmp = new Bitmap(args[1]))
+            using (var argb = bmp.Clone(new Rectangle(0, 0, bmp.Width, bmp.Height), PixelFormat.Format32bppArgb))
+                foreach (var row in Layout.ToGrid(Ocr.Read(argb)).Rows) outp.WriteLine(string.Join("\t", row));
+            return 0;
+        }
+
         // Maar één exemplaar tegelijk; een tweede start doet niets.
         bool first;
         using (var mutex = new Mutex(true, "DataPlakker.SingleInstance", out first))
@@ -258,11 +270,15 @@ static class Ocr
     {
         // Kleine schermtekst wordt slecht herkend; vergroten helpt Windows-OCR
         // flink. Gemeten op 8pt-tabeltekst: 2x gaf 10 foute cellen, 4x nog 3.
+        // Op een echte WMS-screenshot scoorde 4x ook beter dan 3x en 5x, en
+        // zacht vergroten (bicubic) veel beter dan scherp of zwart-wit.
         // Zo groot mogelijk tot 4x, binnen de maximale OCR-afmeting.
         int max = (int)OcrEngine.MaxImageDimension;
         int scale = Math.Max(1, Math.Min(4, max / Math.Max(bmp.Width, bmp.Height)));
 
         SoftwareBitmap soft;
+        byte[] px;
+        int stride, width, height;
         using (var work = new Bitmap(bmp.Width * scale, bmp.Height * scale, PixelFormat.Format32bppArgb))
         {
             using (var g = Graphics.FromImage(work))
@@ -273,13 +289,15 @@ static class Ocr
             // Ruwe pixels rechtstreeks aan de OCR geven (geen bestand op schijf,
             // want het kan werkdata zijn).
             BitmapData data = work.LockBits(new Rectangle(0, 0, work.Width, work.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-            var bytes = new byte[data.Stride * work.Height];
-            Marshal.Copy(data.Scan0, bytes, 0, bytes.Length);
+            stride = data.Stride; width = work.Width; height = work.Height;
+            px = new byte[stride * height];
+            Marshal.Copy(data.Scan0, px, 0, px.Length);
             work.UnlockBits(data);
-            soft = SoftwareBitmap.CreateCopyFromBuffer(CryptographicBuffer.CreateFromByteArray(bytes), BitmapPixelFormat.Bgra8, work.Width, work.Height);
+            soft = SoftwareBitmap.CreateCopyFromBuffer(CryptographicBuffer.CreateFromByteArray(px), BitmapPixelFormat.Bgra8, width, height);
         }
 
-        // OCR in de talen van het Windows-profiel (bij Steffan: Nederlands/Engels).
+        // OCR in de talen van het Windows-profiel. Gemeten: Engels leest
+        // codes en gemengde tekst beter dan Nederlands, ook bij Nederlandse woorden.
         if (engine == null) engine = OcrEngine.TryCreateFromUserProfileLanguages();
         if (engine == null) throw new InvalidOperationException("Geen Windows-OCR-taal beschikbaar.");
         OcrResult result;
@@ -289,12 +307,61 @@ static class Ocr
         // maakt negeren we, want die plakken tabelcellen aan elkaar.
         var words = new List<Word>();
         foreach (var line in result.Lines)
+        {
+            Word prev = null;
             foreach (var w in line.Words)
             {
                 Rect r = w.BoundingRect;
-                words.Add(new Word(w.Text, r.X / scale, r.Y / scale, r.Width / scale, r.Height / scale));
+                var cur = new Word(w.Text, r.X, r.Y, r.Width, r.Height);
+                // Windows-OCR laat underscores weg ("ZONE_A" -> "ZONE" "A");
+                // dan plakken we de woorden hier weer aan elkaar.
+                if (prev != null && UnderscoreBetween(px, stride, width, height, prev, cur))
+                {
+                    double right = cur.X + cur.W, bottom = Math.Max(prev.Y + prev.H, cur.Y + cur.H);
+                    prev.Text += "_" + cur.Text;
+                    prev.Y = Math.Min(prev.Y, cur.Y);
+                    prev.W = right - prev.X;
+                    prev.H = bottom - prev.Y;
+                    continue;
+                }
+                words.Add(cur);
+                prev = cur;
             }
+        }
+        foreach (var w in words) { w.X /= scale; w.Y /= scale; w.W /= scale; w.H /= scale; }
         return words;
+    }
+
+    // Staat er onderaan het gat tussen twee woorden een liggende streep? Dan
+    // was het een underscore. Loopt diezelfde streep ook onder het woord ervoor
+    // door, dan is het onderstreping (bv. een link) en blijft het een spatie.
+    static bool UnderscoreBetween(byte[] px, int stride, int width, int height, Word a, Word b)
+    {
+        int x0 = (int)(a.X + a.W) + 1, x1 = (int)b.X - 1;
+        if (x1 - x0 < 2) return false;
+        double h = Math.Max(a.H, b.H), bottom = Math.Max(a.Y + a.H, b.Y + b.H);
+        int yBg = (int)(bottom - 0.6 * h);
+        if (yBg < 0) return false;
+        int bg = Lum(px, stride, (x0 + x1) / 2, yBg);   // achtergrondkleur midden in het gat
+        for (int y = Math.Max(0, (int)(bottom - 0.3 * h)); y <= Math.Min(height - 1, (int)(bottom + 0.4 * h)); y++)
+            if (InkFraction(px, stride, x0, x1, y, bg) >= 0.8 &&
+                InkFraction(px, stride, (int)a.X, (int)(a.X + a.W), y, bg) < 0.6)
+                return true;
+        return false;
+    }
+
+    // Deel van de pixels op regel y (van x0 t/m x1) dat duidelijk afwijkt van de achtergrond.
+    static double InkFraction(byte[] px, int stride, int x0, int x1, int y, int bg)
+    {
+        int ink = 0;
+        for (int x = x0; x <= x1; x++) if (Math.Abs(Lum(px, stride, x, y) - bg) > 60) ink++;
+        return (double)ink / (x1 - x0 + 1);
+    }
+
+    static int Lum(byte[] px, int stride, int x, int y)
+    {
+        int i = y * stride + x * 4;   // pixels staan als blauw, groen, rood, alfa
+        return (114 * px[i] + 587 * px[i + 1] + 299 * px[i + 2]) / 1000;
     }
 
     // WinRT-functies antwoorden "later"; hier wachten we daar gewoon op.
@@ -324,6 +391,30 @@ static class Layout
         // "15-10-202611:14" -> "15-10-2026 11:14"
         text = Regex.Replace(text, @"\b(\d{1,2}-\d{1,2}-\d{4})(\d{1,2}:\d{2})\b", "$1 $2");
         return text;
+    }
+
+    // Minimale breedte van een strenge goot, in letterhoogtes (zie stap 2).
+    // Op de WMS-meting gaven 0,6 en 0,8 hetzelfde resultaat; 0,8 houdt meer
+    // afstand tot gewone spaties (~0,3) in lopende tekst.
+    const double StrictGap = 0.8;
+
+    // Stroken (begin, eind) waar hooguit "allowed" rijen tekst hebben en die
+    // minstens "minWidth" breed zijn. Stroken aan de rand tellen niet mee.
+    static List<Tuple<int, int>> FreeRuns(int[] cover, int allowed, double minWidth)
+    {
+        var runs = new List<Tuple<int, int>>();
+        int start = -1;
+        for (int x = 0; x <= cover.Length; x++)
+        {
+            bool free = x < cover.Length && cover[x] <= allowed;
+            if (free && start < 0) start = x;
+            else if (!free && start >= 0)
+            {
+                if (x - start >= minWidth && start > 0 && x < cover.Length) runs.Add(Tuple.Create(start, x));
+                start = -1;
+            }
+        }
+        return runs;
     }
 
     public static Grid ToGrid(List<Word> words)
@@ -356,12 +447,15 @@ static class Layout
         }
 
         // Stap 2: kolommen. Een kolomgrens is een verticale "goot": een strook
-        // van minstens 1 letterhoogte breed waar in (bijna) geen enkele rij
-        // tekst staat. Gewone spaties zijn veel smaller, dus lopende tekst
-        // wordt nooit per ongeluk in kolommen geknipt.
-        // ponytail: 1 op de 5 rijen mag over een goot heen lopen (bv. een titel
-        // boven de tabel); kleine tabellen met een brede titelregel worden dan
-        // als tekst gezien. Upgraden als dat in de praktijk vaak misgaat.
+        // waar geen tekst staat. Gewone spaties zijn veel smaller, dus lopende
+        // tekst wordt nooit per ongeluk in kolommen geknipt. Twee soorten:
+        // - streng: in GEEN enkele rij tekst, minstens StrictGap letterhoogte
+        //   breed. Vangt ook lege kolommen waar alleen een kop boven staat.
+        // - ruim: in hooguit 1 op de 5 rijen tekst, minstens 1 letterhoogte.
+        //   Vangt kolommen waar afgekapte tekst ("...") of een titel overheen
+        //   loopt. Alleen gebruikt waar geen strenge goot ligt.
+        // ponytail: kleine tabellen (< 5 rijen) met een brede titelregel worden
+        // nog als tekst gezien. Upgraden als dat in de praktijk vaak misgaat.
         int minX = (int)Math.Floor(words.Min(w => w.X));
         int maxX = (int)Math.Ceiling(words.Max(w => w.X + w.W));
         var cover = new int[maxX - minX + 1];
@@ -372,30 +466,22 @@ static class Layout
                 for (int x = (int)(w.X - minX); x < (int)(w.X + w.W - minX) && x < hit.Length; x++) hit[x] = true;
             for (int x = 0; x < hit.Length; x++) if (hit[x]) cover[x]++;
         }
-        int allowed = rows.Count / 5;
-        var gutters = new List<double>();   // x-midden van elke goot
-        int start = -1;
-        for (int x = 0; x <= cover.Length; x++)
-        {
-            bool free = x < cover.Length && cover[x] <= allowed;
-            if (free && start < 0) start = x;
-            else if (!free && start >= 0)
-            {
-                if (x - start >= h && start > 0 && x < cover.Length) gutters.Add(minX + (start + x) / 2.0);
-                start = -1;
-            }
-        }
+        var strict = FreeRuns(cover, 0, h * StrictGap);
+        var gutters = strict
+            .Concat(FreeRuns(cover, rows.Count / 5, h).Where(l => !strict.Any(s => s.Item1 < l.Item2 && l.Item1 < s.Item2)))
+            .Select(r => minX + (r.Item1 + r.Item2) / 2.0)   // x-midden van elke goot
+            .OrderBy(x => x).ToList();
 
-        // Stap 3: elk woord in de kolom van zijn midden zetten, per cel de
-        // woorden van links naar rechts aan elkaar.
+        // Stap 3: elk woord in de kolom waar het BEGINT (linkerrand), zodat
+        // afgekapte tekst die tot in de volgende kolom doorloopt bij zijn eigen
+        // kolom blijft. Per cel de woorden van links naar rechts aan elkaar.
         int nCols = gutters.Count + 1;
         foreach (var row in rows)
         {
             var cells = new string[nCols];
             foreach (var w in row.Words.OrderBy(w => w.X))
             {
-                double mid = w.X + w.W / 2;
-                int col = gutters.Count(gx => gx < mid);
+                int col = gutters.Count(gx => gx < w.X);
                 cells[col] = cells[col] == null ? w.Text : cells[col] + " " + w.Text;
             }
             grid.Rows.Add(cells.Select(c => RepairSpacing(c ?? "")).ToArray());
@@ -407,7 +493,38 @@ static class Layout
         if (!grid.IsTable)
             // Geen tabel: elke rij is gewoon een regel tekst.
             grid.Rows = grid.Rows.Select(r => new[] { string.Join(" ", r.Where(c => c != "")) }).ToList();
+        else
+            for (int c = 0; c < nCols; c++) RepairToColumnPattern(grid.Rows, c);
         return grid;
+    }
+
+    // Vorm van een cel: elk cijfer wordt 9, elke letter A, de rest blijft.
+    // "Y0010" -> "A9999", "16-2-A-116-00" -> "99-9-A-999-99".
+    static string Shape(string s)
+    {
+        return new string(s.Select(ch => char.IsDigit(ch) ? '9' : char.IsLetter(ch) ? 'A' : ch).ToArray());
+    }
+
+    // Codes recht trekken op het patroon van hun kolom. Komt een vorm minstens
+    // 3 keer voor in de kolom, en past een cel daar precies op zodra je O/o
+    // als 0 en I/l/| als 1 leest (alleen op plekken waar het patroon een
+    // cijfer heeft), dan was het een leesfout: "YOOIO" -> "Y0010".
+    // Andere letters raken we nooit aan; vrije tekst heeft geen terugkerende vorm.
+    static void RepairToColumnPattern(List<string[]> rows, int c)
+    {
+        var templates = rows.Select(r => Shape(r[c])).Where(s => s.Contains('9'))
+            .GroupBy(s => s).Where(g => g.Count() >= 3).Select(g => g.Key).ToList();
+        foreach (var r in rows)
+        {
+            string cell = r[c];
+            if (cell == "" || templates.Contains(Shape(cell))) continue;
+            foreach (var t in templates.Where(t => t.Length == cell.Length))
+            {
+                var fixedCell = new string(cell.Select((ch, i) =>
+                    t[i] != '9' ? ch : "Oo".IndexOf(ch) >= 0 ? '0' : "Il|".IndexOf(ch) >= 0 ? '1' : ch).ToArray());
+                if (Shape(fixedCell) == t) { r[c] = fixedCell; break; }
+            }
+        }
     }
 
     public static string PlainText(Grid grid)
@@ -482,6 +599,25 @@ static class SelfTest
 
     static Tuple<int, string> C(int x, string t) { return Tuple.Create(x, t); }
 
+    // Eén regel tekst in een bepaalde stijl (bv. onderstreept), voor de underscore-controles.
+    static Bitmap Line(string text, FontStyle style)
+    {
+        var bmp = new Bitmap(500, 60, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(bmp))
+        using (var font = new Font("Segoe UI", 11, style))
+        {
+            g.Clear(Color.White);
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+            g.DrawString(text, font, Brushes.Black, 10, 20);
+        }
+        return bmp;
+    }
+
+    static string ReadLine(Bitmap bmp)
+    {
+        using (bmp) return string.Join(" ", Ocr.Read(bmp).Select(w => w.Text));
+    }
+
     public static int Run()
     {
         // 1. Tabelherkenning zonder OCR
@@ -497,6 +633,19 @@ static class SelfTest
         grid = Layout.ToGrid(new List<Word> { W("Dit", 0, 0), W("is", 40, 0), W("tekst", 65, 0), W("nog", 0, 30), W("een", 40, 30), W("regel", 85, 30) });
         Assert(!grid.IsTable, "lopende tekst wordt niet als tabel gezien");
         Assert(Layout.PlainText(grid) == "Dit is tekst\r\nnog een regel", "lopende tekst blijft per regel behouden");
+
+        // Lege kolom met alleen een kop (zoals "Urn" in het WMS) blijft een eigen kolom.
+        grid = Layout.ToGrid(new List<Word> {
+            W("Code", 0, 0), W("Leeg", 100, 0), W("Zone", 200, 0),
+            W("Y0002", 0, 30), W("Ugly", 200, 30), W("Y0003", 0, 60), W("Ugly", 200, 60), W("Y0004", 0, 90), W("Shelves", 200, 90) });
+        Assert(grid.Rows[0].Length == 3 && grid.Rows[0][1] == "Leeg" && grid.Rows[1][1] == "" && grid.Rows[1][2] == "Ugly", "lege kolom met alleen een kop blijft een eigen kolom");
+
+        // Codes worden rechtgetrokken op het patroon van hun kolom (O->0, I->1).
+        grid = Layout.ToGrid(new List<Word> {
+            W("Y0002", 0, 0), W("a", 200, 0), W("Y0003", 0, 30), W("b", 200, 30), W("Y0004", 0, 60), W("c", 200, 60),
+            W("YOOIO", 0, 90), W("Olie", 200, 90) });
+        Assert(grid.Rows[3][0] == "Y0010", "kolompatroon: YOOIO wordt Y0010");
+        Assert(grid.Rows[3][1] == "Olie", "kolompatroon: gewone tekst blijft ongemoeid");
 
         // 2. Echte OCR
         using (var bmp = Image(
@@ -516,6 +665,11 @@ static class SelfTest
             grid = Layout.ToGrid(Ocr.Read(bmp));
         Assert(!grid.IsTable, "OCR: lopende tekst wordt niet als tabel gezien");
         Assert(Layout.PlainText(grid).StartsWith("De levering van vandaag mist twee dozen"), "OCR: tekst klopt");
+
+        string us = ReadLine(Line("ZONE_A_LEGBORD_GROOT", FontStyle.Regular));
+        Assert(us == "ZONE_A_LEGBORD_GROOT", "OCR: underscores blijven staan (kreeg \"" + us + "\")");
+        string ul = ReadLine(Line("Bekijk de levering hier", FontStyle.Underline));
+        Assert(!ul.Contains("_"), "OCR: onderstreepte tekst krijgt geen underscores (kreeg \"" + ul + "\")");
 
         // 3. Klembord
         grid = new Grid { IsTable = true };

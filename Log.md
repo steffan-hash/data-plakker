@@ -14,6 +14,33 @@ Voorbeeld van een entry:
 **Volgende stap:** [wat er logisch als eerste opgepakt wordt]
 -->
 
+## Tussentijdse update 2026-10-15 — herkenning op echte WMS-screenshot: 54% → 94,5%
+**Meetmethode:** een echte WMS-screenshot van Steffan (47 rijen × 10
+kolommen) cel voor cel overgetypt als juiste antwoord, en elke variant
+daartegen gescoord. Screenshot + antwoorden staan alleen lokaal (werkdata),
+niet in deze openbare repo. Nieuw: `DataPlakker.exe --ocr <afbeelding>`
+leest een opgeslagen screenshot uit naar tab-gescheiden tekst.
+**Wat hielp:**
+- Kolommen: strenge goot (geen enkele rij tekst, ≥0,8 letterhoogte) naast de
+  ruime goot → lege kolommen met alleen een kop blijven eigen kolommen.
+  Woord hoort bij de kolom waar het begint (linkerrand) → afgekapte tekst
+  (`...`) schuift niet meer naar de volgende kolom. 54% → 84,5%.
+- Underscores: Windows-OCR laat ze weg; nu teruggezet als er onderaan het gat
+  tussen twee woorden een streep staat (niet bij onderstreping). → 94,0%.
+- Kolompatroon: codes rechtgetrokken (O→0, I/l→1) als ze dan precies passen
+  op een vorm die ≥3× in de kolom voorkomt. → 94,5%.
+**Wat níet hielp (gemeten):** 5x vergroten (82,6%), 3x (83,4%), scherp
+vergroten (47%), zwart-wit (17–37%), meer contrast (72%), Nederlandse
+OCR-taal (80,6%). 4x zacht vergroten + Engels blijft het beste.
+**Resterende fouten** zitten in de OCR zelf (bv. `-A-` gelezen als `4` in korte
+codes, `UV-C lamp` → `UV-Clamp`, tekst op een oranje gemarkeerde rij wordt
+niet gelezen) — niet veilig te repareren zonder te gokken.
+**Let op:** Smart App Control blokkeerde op Steffans laptop meerdere keren
+een lokaal gebouwde testvariant. Komt het bij `install.ps1` voor, dan
+opnieuw draaien (nieuwe build = nieuwe hash).
+Selftest: 21 controles (o.a. underscore, onderstreping, lege kolom,
+kolompatroon), alle groen.
+
 ## Tussentijdse update 2026-10-15 — Smart App Control blokkeerde de .exe bij collega
 **Oorzaak (gereproduceerd op Steffans laptop, SAC staat daar AAN):** SAC
 blokkeert een onbekende, niet-ondertekende .exe alleen als hij de markering
