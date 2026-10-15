@@ -14,6 +14,26 @@ Voorbeeld van een entry:
 **Volgende stap:** [wat er logisch als eerste opgepakt wordt]
 -->
 
+## Tussentijdse update 2026-10-15 — bij twijfel kiest de kolom (lokaal, nog niet gepubliceerd)
+**Aanleiding:** drie korte locatiecodes bleven fout; debug liet een gelijkspel
+zien (normale + 6x-lezing `16-24-116-00` tegen 3x + 8x `16-2-A-116-OO`).
+**Wat gedaan:** herlezen woorden onthouden al hun lezingen; in
+`RepairToColumnPattern` wint per cel de lezing die past op het patroon dat
+het vaakst in de kolom voorkomt (daarna O→0 zoals voorheen). Alleen cellen
+met één woord, alleen lezingen die de OCR zelf gaf. Nieuwe selftest.
+**Gemeten** (drie WMS-screenshots, lokaal): 95,5→96,0%, 94,9→95,1%,
+95,6→96,3%, zonder extra tijd. Ook geprobeerd: 10x-lezing erbij (iets
+slechter) en alle woorden herlezen (+0,2–0,5 punt maar ~45% trager) — niet
+gedaan.
+**Status:** geïnstalleerd op Steffans laptop, lokaal gecommit, níet gepusht
+en geen release — wacht op Steffans akkoord (zie PROJECT.md → Publiceren).
+
+## Tussentijdse update 2026-10-15 — publiceren pas na akkoord
+Op verzoek van Steffan (te veel versies): nieuwe versies worden eerst alleen
+lokaal gebouwd, getest en geïnstalleerd en lokaal gecommit. Online zetten
+(push + release) pas na zijn akkoord, via nieuw `scripts/publiceer.ps1`
+(controleert ook op bedrijfsdata). Vastgelegd in `PROJECT.md` → Publiceren.
+
 ## Tussentijdse update 2026-10-15 — woorden met cijfers los herlezen (stemmen)
 **Aanleiding:** Windows-OCR gokt codes mede op basis van de buren en las
 korte locatiecodes structureel fout (`-A-` als `4`). Pixelanalyse: de cel

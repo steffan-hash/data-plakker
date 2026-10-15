@@ -252,6 +252,7 @@ class Word
 {
     public string Text;
     public double X, Y, W, H;
+    public List<string> Readings;   // alle verschillende lezingen uit het herlezen (null = niet herlezen)
     public Word(string text, double x, double y, double w, double h) { Text = text; X = x; Y = y; W = w; H = h; }
 }
 
@@ -312,6 +313,8 @@ static class Ocr
             bool clearWinner = ranked[0].Count() >= 2 && (ranked.Count == 1 || ranked[1].Count() < ranked[0].Count());
             if (clearWinner && ranked[0].Key != words[w].Text.ToUpperInvariant())
                 words[w].Text = ranked[0].GroupBy(v => v).OrderByDescending(g => g.Count()).First().Key;
+            // Bij twijfel kan de kolom later nog kiezen (zie RepairToColumnPattern).
+            words[w].Readings = votes.Distinct().ToList();
         }
     }
 
@@ -539,15 +542,20 @@ static class Layout
         // afgekapte tekst die tot in de volgende kolom doorloopt bij zijn eigen
         // kolom blijft. Per cel de woorden van links naar rechts aan elkaar.
         int nCols = gutters.Count + 1;
+        var readings = new List<List<string>[]>();   // per cel met precies één herlezen woord: diens lezingen
         foreach (var row in rows)
         {
             var cells = new string[nCols];
+            var cellWords = new List<Word>[nCols];
             foreach (var w in row.Words.OrderBy(w => w.X))
             {
                 int col = gutters.Count(gx => gx < w.X);
                 cells[col] = cells[col] == null ? w.Text : cells[col] + " " + w.Text;
+                (cellWords[col] = cellWords[col] ?? new List<Word>()).Add(w);
             }
             grid.Rows.Add(cells.Select(c => RepairSpacing(c ?? "")).ToArray());
+            readings.Add(cellWords.Select(ws => ws != null && ws.Count == 1 && ws[0].Readings != null
+                ? ws[0].Readings.Select(RepairSpacing).ToList() : null).ToArray());
         }
 
         // Tabel = minstens 2 kolommen en minstens 2 rijen met meer dan 1 gevulde cel.
@@ -557,7 +565,7 @@ static class Layout
             // Geen tabel: elke rij is gewoon een regel tekst.
             grid.Rows = grid.Rows.Select(r => new[] { string.Join(" ", r.Where(c => c != "")) }).ToList();
         else
-            for (int c = 0; c < nCols; c++) RepairToColumnPattern(grid.Rows, c);
+            for (int c = 0; c < nCols; c++) RepairToColumnPattern(grid.Rows, readings, c);
         return grid;
     }
 
@@ -568,26 +576,50 @@ static class Layout
         return new string(s.Select(ch => char.IsDigit(ch) ? '9' : char.IsLetter(ch) ? 'A' : ch).ToArray());
     }
 
-    // Codes recht trekken op het patroon van hun kolom. Komt een vorm minstens
-    // 3 keer voor in de kolom, en past een cel daar precies op zodra je O/o
-    // als 0 en I/l/| als 1 leest (alleen op plekken waar het patroon een
-    // cijfer heeft), dan was het een leesfout: "YOOIO" -> "Y0010".
-    // Andere letters raken we nooit aan; vrije tekst heeft geen terugkerende vorm.
-    static void RepairToColumnPattern(List<string[]> rows, int c)
+    // Codes recht trekken op het patroon van hun kolom. Een "patroon" is een
+    // vorm die minstens 3 keer in de kolom voorkomt. Twee reparaties:
+    // 1. Past een cel precies op een patroon zodra je O/o als 0 en I/l/| als 1
+    //    leest (alleen waar het patroon een cijfer heeft), dan was het een
+    //    leesfout: "YOOIO" -> "Y0010".
+    // 2. Twijfelde het herlezen (gelijkspel), dan wint de lezing die past bij
+    //    het patroon dat het vaakst in de kolom voorkomt. Gemeten: korte
+    //    locatiecodes werden 2 tegen 2 gelezen als "16-24-116-00" en
+    //    "16-2-A-116-OO"; de kolom heeft meer codes van die tweede vorm.
+    // Andere letters raken we nooit aan, en we kiezen alleen uit lezingen die
+    // de OCR zelf gaf. Vrije tekst heeft geen terugkerende vorm.
+    static void RepairToColumnPattern(List<string[]> rows, List<List<string>[]> readings, int c)
     {
-        var templates = rows.Select(r => Shape(r[c])).Where(s => s.Contains('9'))
-            .GroupBy(s => s).Where(g => g.Count() >= 3).Select(g => g.Key).ToList();
-        foreach (var r in rows)
+        var counts = rows.Select(r => Shape(r[c])).Where(s => s.Contains('9'))
+            .GroupBy(s => s).Where(g => g.Count() >= 3).ToDictionary(g => g.Key, g => g.Count());
+        if (counts.Count == 0) return;
+        for (int i = 0; i < rows.Count; i++)
         {
-            string cell = r[c];
-            if (cell == "" || templates.Contains(Shape(cell))) continue;
-            foreach (var t in templates.Where(t => t.Length == cell.Length))
+            string best = null;
+            int bestCount = 0;
+            var candidates = new List<string> { rows[i][c] };
+            if (readings[i][c] != null) candidates.AddRange(readings[i][c]);
+            foreach (var cand in candidates)
             {
-                var fixedCell = new string(cell.Select((ch, i) =>
-                    t[i] != '9' ? ch : "Oo".IndexOf(ch) >= 0 ? '0' : "Il|".IndexOf(ch) >= 0 ? '1' : ch).ToArray());
-                if (Shape(fixedCell) == t) { r[c] = fixedCell; break; }
+                string fit = FitToPattern(cand, counts.Keys);
+                if (fit != null && counts[Shape(fit)] > bestCount) { best = fit; bestCount = counts[Shape(fit)]; }
             }
+            if (best != null) rows[i][c] = best;
         }
+    }
+
+    // De cel zelf als die al op een patroon past, anders de O->0 / I->1-versie
+    // die er precies op past, anders null.
+    static string FitToPattern(string cell, IEnumerable<string> patterns)
+    {
+        if (cell == "") return null;
+        if (patterns.Contains(Shape(cell))) return cell;
+        foreach (var t in patterns.Where(t => t.Length == cell.Length))
+        {
+            var fixedCell = new string(cell.Select((ch, i) =>
+                t[i] != '9' ? ch : "Oo".IndexOf(ch) >= 0 ? '0' : "Il|".IndexOf(ch) >= 0 ? '1' : ch).ToArray());
+            if (Shape(fixedCell) == t) return fixedCell;
+        }
+        return null;
     }
 
     public static string PlainText(Grid grid)
@@ -709,6 +741,14 @@ static class SelfTest
             W("YOOIO", 0, 90), W("Olie", 200, 90) });
         Assert(grid.Rows[3][0] == "Y0010", "kolompatroon: YOOIO wordt Y0010");
         Assert(grid.Rows[3][1] == "Olie", "kolompatroon: gewone tekst blijft ongemoeid");
+
+        // Bij twijfel kiest de kolom: van de lezingen wint die op het patroon van de kolom past.
+        var twijfel = W("5-4-14", 0, 120);
+        twijfel.Readings = new List<string> { "5-4-14", "5-A-14" };
+        grid = Layout.ToGrid(new List<Word> {
+            W("1-A-10", 0, 0), W("a", 200, 0), W("2-A-11", 0, 30), W("b", 200, 30), W("3-A-12", 0, 60), W("c", 200, 60),
+            W("4-A-13", 0, 90), W("d", 200, 90), twijfel, W("e", 200, 120) });
+        Assert(grid.Rows[4][0] == "5-A-14", "kolompatroon: bij twijfel wint de lezing die bij de kolom past");
 
         // 2. Echte OCR
         using (var bmp = Image(
