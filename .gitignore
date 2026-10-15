@@ -23,3 +23,6 @@ node_modules/
 # Gebouwde .exe (maak opnieuw met scripts\install.ps1)
 bin/
 dist/
+
+# Lokale lijst met bedrijfsnamen voor publiceer.ps1 (mag nooit openbaar)
+prive/

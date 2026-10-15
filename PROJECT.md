@@ -41,7 +41,18 @@ Zie `Log.md` voor wat er gebouwd is.
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 # Alleen de controles draaien
 bin\DataPlakker.exe --selftest | Out-Host
+# Goedgekeurde versie online zetten (push + zip + GitHub-release)
+powershell -ExecutionPolicy Bypass -File scripts\publiceer.ps1 -Versie 1.4
 ```
+
+## Publiceren (afwijking van CLAUDE.md, besloten 2026-10-15)
+De repo is openbaar en collega's downloaden de laatste release. Daarom, in
+dit project, in plaats van "commit + push aan het eind van elke sessie":
+- Tijdens het werken: bouwen, testen en installeren op Steffans laptop
+  (`install.ps1`), en **alleen lokaal committen**. Niet pushen, geen release.
+- Pas als Steffan zegt dat hij tevreden is: `publiceer.ps1` (push + release).
+- Werkt Steffan daarna op een andere machine verder, dan eerst publiceren of
+  op zijn verzoek pushen zonder release; anders mist die machine de commits.
 
 ## Context die niet vanzelfsprekend is
 Tabellen komen van overal: ERP, WMS, Excel, mail, websites. De
