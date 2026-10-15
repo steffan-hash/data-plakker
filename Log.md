@@ -14,6 +14,20 @@ Voorbeeld van een entry:
 **Volgende stap:** [wat er logisch als eerste opgepakt wordt]
 -->
 
+## Tussentijdse update 2026-10-15 — selectiekader sneller in beeld
+**Wat gedaan:** `data-plakker.ps1` gemeten van processtart tot kader in
+beeld: ~0,5–0,65 s → ~0,37 s. Twee oorzaken weggehaald:
+- DPI-instelling via Add-Type compileerde elke start C# (~0,2 s); nu een
+  directe aanroep via reflection. Valkuil: zonder `PreserveSig` gaf die
+  aanroep stil `False` en werkte de DPI-instelling niet — gecontroleerd
+  dat hij nu wél slaagt (awareness 0 → 2).
+- OCR-onderdelen (`layout.ps1`) pas laden ná het selecteren.
+- Volledige flow nagebootst zonder muis (kader → OCR → klembord): werkt.
+**Nog open:** de resterende ~0,37 s is vooral PowerShell zelf opstarten.
+Bijna direct kan alleen met een proces dat op de achtergrond blijft
+draaien en zelf naar de sneltoets luistert — niet gedaan, op Steffans
+verzoek op te pakken.
+
 ## Tussentijdse update 2026-10-15 — OCR nauwkeuriger, Slack-werkwijze
 **Wat gedaan:**
 - `layout.ps1`: selectie wordt nu tot 4x vergroot vóór de OCR (was 2x).

@@ -12,13 +12,15 @@ $ErrorActionPreference = 'Stop'
 
 # Zonder dit ziet het script op een geschaald scherm (bv. 125%) een kleinere,
 # verschoven versie van het scherm en klopt de selectie niet met de pixels.
-Add-Type -Namespace DataPlakker -Name Dpi -MemberDefinition @'
-[DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(System.IntPtr value);
-[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
-'@
-if (-not [DataPlakker.Dpi]::SetProcessDpiAwarenessContext([IntPtr]-4)) { $null = [DataPlakker.Dpi]::SetProcessDPIAware() }
+# De Windows-functie wordt "met de hand" aangeroepen i.p.v. via Add-Type,
+# want Add-Type compileert bij elke start C#-code (kostte ~0,2 s).
+$dpi = [AppDomain]::CurrentDomain.DefineDynamicAssembly((New-Object Reflection.AssemblyName 'Dpi'), 'Run').DefineDynamicModule('Dpi').DefineType('Dpi', 'Public,Class')
+$dpi.DefinePInvokeMethod('SetProcessDpiAwarenessContext', 'user32.dll', 'Public,Static,PinvokeImpl', 'Standard', [bool], [Type[]]@([IntPtr]), 'Winapi', 'Auto').SetImplementationFlags('PreserveSig')
+$null = $dpi.CreateType()::SetProcessDpiAwarenessContext([IntPtr]-4)   # -4 = per beeldscherm (v2)
 
-. "$PSScriptRoot\layout.ps1"
+# Alleen wat nodig is voor het selectiekader; de OCR-onderdelen (layout.ps1)
+# laden we pas na het selecteren, zodat het kader sneller in beeld staat.
+Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 
 try {
     # Een foto van alle schermen samen maken; die tonen we als "bevroren"
@@ -78,6 +80,7 @@ try {
     if (-not $state.Done) { return }
 
     # Alleen het geselecteerde stuk uit de foto knippen en uitlezen.
+    . "$PSScriptRoot\layout.ps1"
     $crop = $shot.Clone($state.Rect, $shot.PixelFormat)
     $shot.Dispose()
     $grid = ConvertTo-Grid (Get-OcrWords $crop)
