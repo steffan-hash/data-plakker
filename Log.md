@@ -14,6 +14,19 @@ Voorbeeld van een entry:
 **Volgende stap:** [wat er logisch als eerste opgepakt wordt]
 -->
 
+## Tussentijdse update 2026-10-15 — pakket voor collega's
+**Wat gedaan:** `scripts/maak-pakket.ps1` bouwt+test (via install.ps1) en
+maakt `dist/data-plakker.zip` met `DataPlakker.exe`, `pakket/installeer.cmd`
+(kopieert naar %LOCALAPPDATA%data-plakker, Opstarten-snelkoppeling,
+geen beheerdersrechten) en `pakket/LEESMIJ.txt`. Getest door de zip uit
+te pakken en installeer.cmd te draaien; daarna Steffans eigen installatie
+teruggezet en de testkopie verwijderd.
+- `install.ps1`: wacht nu tot de oude .exe echt gestopt is (eerste
+  pakketpoging faalde doordat de .exe nog vergrendeld was).
+**Aandachtspunten bij delen:** Gmail blokkeert .exe (ook in zip) → via
+Slack/Drive; niet-ondertekende .exe geeft een SmartScreen-waarschuwing;
+bedrijfs-IT kan onbekende programma's blokkeren (niet gecontroleerd).
+
 ## Tussentijdse update 2026-10-15 — van PowerShell naar .exe op de achtergrond
 **Wat gedaan:** op verzoek van Steffan (puur performance) herschreven als
 één C#-bestand `src/DataPlakker.cs`, gecompileerd met de `csc.exe` die in

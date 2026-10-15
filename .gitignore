@@ -22,3 +22,4 @@ node_modules/
 
 # Gebouwde .exe (maak opnieuw met scripts\install.ps1)
 bin/
+dist/

@@ -20,7 +20,7 @@ $exe = Join-Path $root 'bin\DataPlakker.exe'
 # 1. Draaiende versie stoppen. Kan zonder risico: het programma houdt geen
 #    bestanden of database open.
 Get-Process DataPlakker -ErrorAction SilentlyContinue | Stop-Process
-Start-Sleep -Milliseconds 300
+Wait-Process DataPlakker -Timeout 10 -ErrorAction SilentlyContinue
 
 # 2. Compileren. De Windows-OCR wordt aangesproken via de beschrijvingen
 #    (.winmd) die in System32\WinMetadata staan.

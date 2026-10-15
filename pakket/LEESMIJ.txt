@@ -1,0 +1,34 @@
+data-plakker
+============
+
+Maakt van een stukje scherm plakbare tekst. Handig als je een tabel of tekst
+wilt delen zonder screenshot: de ontvanger kan ermee verder (kopieren,
+rekenen, zoeken).
+
+Installeren
+-----------
+1. Pak de zip uit (rechtsklik > Alles uitpakken).
+2. Dubbelklik op installeer.cmd.
+   Krijg je "Windows heeft uw pc beschermd"? Klik op "Meer info" en dan
+   "Toch uitvoeren". Het programma is niet digitaal ondertekend, daarom
+   die waarschuwing.
+
+Gebruiken
+---------
+1. Druk Ctrl+Alt+P.
+2. Sleep een kader om de tekst of tabel. (Esc = annuleren)
+3. Hoor je een geluidje, dan staat het op het klembord. Plakken:
+   - Gmail / mail: Ctrl+V, je krijgt een echte tabel.
+   - Slack: Ctrl+Shift+V en klik op "Apply markdown", dan blijven de
+     kolommen netjes uitgelijnd.
+
+Alles gebeurt op je eigen computer: er wordt niets verstuurd of opgeslagen.
+Kleine tekst kan soms verkeerd gelezen worden; lees bij cijfers even mee.
+
+Stoppen / verwijderen
+---------------------
+- Stoppen: rechtsklik op het icoontje rechtsonder bij de klok > Afsluiten.
+- Verwijderen: daarna de map %LOCALAPPDATA%\data-plakker weggooien, en
+  data-plakker uit de map Opstarten (Win+R, typ shell:startup).
+
+Vragen: Steffan.
