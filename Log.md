@@ -17,7 +17,7 @@ Voorbeeld van een entry:
 ## Tussentijdse update 2026-10-15 — pakket voor collega's
 **Wat gedaan:** `scripts/maak-pakket.ps1` bouwt+test (via install.ps1) en
 maakt `dist/data-plakker.zip` met `DataPlakker.exe`, `pakket/installeer.cmd`
-(kopieert naar %LOCALAPPDATA%data-plakker, Opstarten-snelkoppeling,
+(kopieert naar %LOCALAPPDATA%\data-plakker, Opstarten-snelkoppeling,
 geen beheerdersrechten) en `pakket/LEESMIJ.txt`. Getest door de zip uit
 te pakken en installeer.cmd te draaien; daarna Steffans eigen installatie
 teruggezet en de testkopie verwijderd.
