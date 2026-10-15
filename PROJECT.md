@@ -1,42 +1,47 @@
-# Project: [naam invullen]
-
-Dit bestand is projectspecifiek — hoort niet 1-op-1 gekopieerd te worden
-naar een ander project. Onderstaande is een eerste versie op basis van een
-eerder gesprek; leent zich voor een vervolggesprek om scherper te maken.
+# Project: data-plakker
 
 ## Overzicht
-Klein intern dashboard voor logistiek/operations werk. Verwerkt handmatig
-geëxporteerde Excel-bestanden (.xlsx) tot een overzicht/rapportage.
-Persoonlijk project. Draait op GitHub voor version control, o.a. omdat het
-op meerdere plekken (thuis/werk) wordt bewerkt.
+Screenshot-tool die tekst en tabellen uit een stuk scherm haalt en ze als
+plakbare tekst op het klembord zet. Aanleiding: Steffan deelt vaak tekst of
+tabellen als screenshot, maar de ontvanger kan met een plaatje niets
+(niet kopiëren, niet doorrekenen, niet zoeken).
+
+## Kerndoel
+Sneltoets → gebied op het scherm kiezen → resultaat staat direct op het
+klembord, zonder venster tussendoor. Plakken in:
+- **Gmail/mail** → een tabel komt als echte tabel in de mail.
+- **Chat (Teams/Slack/WhatsApp)** → platte tekst; een tabel als uitgelijnde
+  kolommen.
+
+## Randvoorwaarden
+- **Alles lokaal.** Screenshots bevatten werkdata en mogen de laptop niet
+  verlaten — dus geen cloud-AI/OCR-dienst. Herkenning via de ingebouwde
+  Windows-OCR (Nederlands + Engels).
+- Proof of concept: alleen Steffans werklaptop (Windows 11).
+
+## Bewust niet (nu)
+- Bestaande afbeeldingen omzetten (alleen live scherm-selectie).
+- Voorbeeldvenster/corrigeren vóór kopiëren.
+- Plakken in Excel/Sheets of ERP/WMS als doel (werkt mogelijk
+  vanzelf, maar wordt niet op getest).
+
+## Later (als de PoC werkt)
+- Installer zodat collega's het ook kunnen gebruiken.
 
 ## Status
-Techkeuze nog niet gemaakt. Bij de eerste sessie: overleg met Claude welke
-aanpak het beste past (bijv. Python + Streamlit voor een lokaal dashboard,
-of iets simpelers als het echt klein blijft). Zodra dat vastligt, deze
-sectie en de commando's hieronder aanvullen.
+Techkeuze: PowerShell + Windows-OCR (alles zit al in Windows, niets te
+installeren). Zie `Log.md` voor wat er gebouwd is.
 
 ## Belangrijkste commando's
 ```
-# TODO: invullen zodra tech gekozen is, bijv.
-# python -m streamlit run dashboard.py
-# pip install -r requirements.txt
+# Sneltoets (Ctrl+Alt+P) eenmalig installeren
+powershell -ExecutionPolicy Bypass -File scripts\install-sneltoets.ps1
+# Zonder sneltoets starten
+powershell -ExecutionPolicy Bypass -File scripts\data-plakker.ps1
+# Test van de OCR + tabelherkenning
+powershell -ExecutionPolicy Bypass -File scripts\test-layout.ps1
 ```
 
-## Data & bestanden
-- Brondata: Excel-bestanden (.xlsx), handmatig geëxporteerd vanuit [naam bronsysteem invullen]
-- Omdat het handmatige exports zijn: format kan per export licht verschillen
-  (kolomvolgorde, extra tabbladen, lege rijen bovenaan). Ga niet uit van een
-  vast format — controleer bij twijfel het bestand eerst voordat je code
-  schrijft die ervan uitgaat.
-- Input komt in: `data/input/` (map aanmaken als die nog niet bestaat)
-- Output/rapportages gaan naar: `data/output/`
-
-## Conventies
-- Scripts in `scripts/`
-- Output-bestanden met datum in de naam: `rapportage_YYYY-MM-DD.xlsx`
-
 ## Context die niet vanzelfsprekend is
-[Vul hier aan: bedrijfsspecifieke afkortingen, kolomnamen die niet voor
-zich spreken, of vaste regels in het proces die Claude niet kan afleiden
-uit de data zelf.]
+Tabellen komen van overal: ERP, WMS, Excel, mail, websites. De
+tabelherkenning mag dus niet uitgaan van rasterlijnen of één vaste opmaak.
