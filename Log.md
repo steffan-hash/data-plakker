@@ -14,6 +14,22 @@ Voorbeeld van een entry:
 **Volgende stap:** [wat er logisch als eerste opgepakt wordt]
 -->
 
+## Tussentijdse update 2026-10-15 — Smart App Control blokkeerde de .exe bij collega
+**Oorzaak (gereproduceerd op Steffans laptop, SAC staat daar AAN):** SAC
+blokkeert een onbekende, niet-ondertekende .exe alleen als hij de markering
+"gedownload van internet" (Zone.Identifier) heeft. Het oordeel blijft per
+hash hangen: eenmaal geblokkeerd = op die pc altijd geblokkeerd, ook na
+Unblock-File of een verse kopie; eenmaal zonder markering gestart =
+toegestaan. Daarom werkte het bij Steffan altijd (lokaal gebouwd).
+**Wat gedaan:** `pakket/installeer.cmd` haalt na het kopiëren de markering
+eraf (`Unblock-File`) vóór de eerste start. Getest met een nooit eerder
+geziene .exe én installeer.cmd, beide met markering: start zonder blokkade.
+LEESMIJ + README: exe niet rechtstreeks uit de zip starten. Release v1.1
+(nieuwe build = nieuwe hash, want v1.0 is bij de collega al geblokkeerd).
+**Structurele oplossing (niet gedaan):** code signing (bv. Azure Artifact
+Signing, betaald) — zelfs dan bouwt SAC-reputatie volgens bronnen niet
+altijd direct op.
+
 ## Tussentijdse update 2026-10-15 — openbaar gemaakt, README + release
 **Wat gedaan:** `README.md` voor collega's (gebruik, installeren via
 release-link, zelf bouwen, beperkingen). Vóór openbaar maken, met akkoord

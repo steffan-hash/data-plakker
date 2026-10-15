@@ -8,10 +8,13 @@ rekenen, zoeken).
 Installeren
 -----------
 1. Pak de zip uit (rechtsklik > Alles uitpakken).
-2. Dubbelklik op installeer.cmd.
+2. Dubbelklik op installeer.cmd. Start DataPlakker.exe NIET zelf rechtstreeks
+   uit de zip: Windows (Smart App Control) blokkeert het dan, omdat het
+   programma niet digitaal ondertekend is. installeer.cmd haalt de
+   markering "gedownload van internet" eraf voordat het programma start
+   (hetzelfde als Eigenschappen > Blokkering opheffen).
    Krijg je "Windows heeft uw pc beschermd"? Klik op "Meer info" en dan
-   "Toch uitvoeren". Het programma is niet digitaal ondertekend, daarom
-   die waarschuwing.
+   "Toch uitvoeren".
 
 Gebruiken
 ---------

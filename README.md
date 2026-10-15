@@ -22,8 +22,11 @@ Download [`data-plakker.zip`](https://github.com/steffan-hash/data-plakker/relea
 Geen beheerdersrechten nodig. Het programma start daarna vanzelf bij inloggen
 en staat als icoontje rechtsonder bij de klok (rechtsklik → Afsluiten).
 
-Het programma is niet digitaal ondertekend; Windows kan daarom waarschuwen
-("Windows heeft uw pc beschermd" → *Meer info* → *Toch uitvoeren*).
+Het programma is niet digitaal ondertekend. Start `DataPlakker.exe` daarom niet
+rechtstreeks uit de zip: **Smart App Control** blokkeert een onbekend programma
+dat van internet komt. `installeer.cmd` haalt die download-markering eraf vóór
+de eerste start (hetzelfde als *Eigenschappen → Blokkering opheffen*).
+Krijg je "Windows heeft uw pc beschermd": *Meer info* → *Toch uitvoeren*.
 
 Vereist: Windows 10 (1703+) of 11.
 
