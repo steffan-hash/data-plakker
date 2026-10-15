@@ -18,7 +18,7 @@ Windows zelf zit; er wordt niets verstuurd of opgeslagen.
 
 ## Installeren
 
-Download `data-plakker.zip`, pak hem uit en dubbelklik op `installeer.cmd`.
+Download [`data-plakker.zip`](https://github.com/steffan-hash/data-plakker/releases/latest/download/data-plakker.zip), pak hem uit en dubbelklik op `installeer.cmd`.
 Geen beheerdersrechten nodig. Het programma start daarna vanzelf bij inloggen
 en staat als icoontje rechtsonder bij de klok (rechtsklik → Afsluiten).
 
