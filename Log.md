@@ -14,6 +14,22 @@ Voorbeeld van een entry:
 **Volgende stap:** [wat er logisch als eerste opgepakt wordt]
 -->
 
+## Tussentijdse update 2026-10-15 — openbaar gemaakt, README + release
+**Wat gedaan:** `README.md` voor collega's (gebruik, installeren via
+release-link, zelf bouwen, beperkingen). Vóór openbaar maken, met akkoord
+van Steffan, de hele git-geschiedenis herschreven: bedrijfs- en
+systeemnamen geneutraliseerd (ERP/WMS), echte artikelcode en
+leveranciersnaam uit de testdata vervangen, en alle commits naar het
+anonieme GitHub-adres (repo-lokale `user.email` staat daar nu ook op).
+Gecontroleerd: 0 sporen in alle versies, selftest groen. Force-push met
+expliciete lease op de verwachte oude versie. Release **v1.0** met
+`data-plakker.zip`; repo **openbaar** (download zonder inloggen: HTTP 200).
+**Bewust geaccepteerd:** oude, losgekoppelde commits zijn bij GitHub
+theoretisch nog op exacte SHA op te vragen.
+**Let op bij nieuwe versies:** `scripts/maak-pakket.ps1` + een nieuwe
+release (`gh release create v1.x dist/data-plakker.zip`); geen
+bedrijfsdata in testdata of log zetten nu de repo openbaar is.
+
 ## Tussentijdse update 2026-10-15 — pakket voor collega's
 **Wat gedaan:** `scripts/maak-pakket.ps1` bouwt+test (via install.ps1) en
 maakt `dist/data-plakker.zip` met `DataPlakker.exe`, `pakket/installeer.cmd`
