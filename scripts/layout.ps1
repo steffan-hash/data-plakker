@@ -38,10 +38,11 @@ function Wait-WinRt($Operation, [Type]$ResultType) {
 }
 
 function Get-OcrWords([System.Drawing.Bitmap]$Bitmap) {
-    # Kleine schermtekst wordt slecht herkend; 2x vergroten helpt Windows-OCR
-    # flink. Alleen als het resultaat onder de maximale OCR-afmeting blijft.
+    # Kleine schermtekst wordt slecht herkend; vergroten helpt Windows-OCR
+    # flink. Gemeten op 8pt-tabeltekst: 2x gaf 10 foute cellen, 4x nog 3.
+    # Zo groot mogelijk tot 4x, binnen de maximale OCR-afmeting.
     $max = [Windows.Media.Ocr.OcrEngine]::MaxImageDimension
-    $scale = if ($Bitmap.Width * 2 -le $max -and $Bitmap.Height * 2 -le $max) { 2 } else { 1 }
+    $scale = [math]::Max(1, [math]::Min(4, [math]::Floor($max / [math]::Max($Bitmap.Width, $Bitmap.Height))))
     $work = New-Object System.Drawing.Bitmap ($Bitmap.Width * $scale), ($Bitmap.Height * $scale)
     $g = [System.Drawing.Graphics]::FromImage($work)
     $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
@@ -72,6 +73,16 @@ function Get-OcrWords([System.Drawing.Bitmap]$Bitmap) {
             [pscustomobject]@{ Text = $w.Text; X = $r.X / $scale; Y = $r.Y / $scale; W = $r.Width / $scale; H = $r.Height / $scale }
         }
     }
+}
+
+function Repair-OcrSpacing([string]$Text) {
+    # Herstelt alleen spaties die de OCR in datums verkeerd zet; verandert
+    # nooit een cijfer of letter (een gemiste ":" raden we bewust niet).
+    # "15- 10-2026" -> "15-10-2026"
+    $Text = $Text -replace '\b(\d{1,2})- (\d{1,2}-\d{4})\b', '$1-$2'
+    # "15-10-202611:14" -> "15-10-2026 11:14"
+    $Text = $Text -replace '\b(\d{1,2}-\d{1,2}-\d{4})(\d{1,2}:\d{2})\b', '$1 $2'
+    return $Text
 }
 
 function ConvertTo-Grid($Words) {
@@ -137,7 +148,7 @@ function ConvertTo-Grid($Words) {
             $col = @($gutters | Where-Object { $_ -lt $mid }).Count
             $cells[$col] = if ($cells[$col]) { $cells[$col] + ' ' + $w.Text } else { $w.Text }
         }
-        , $cells
+        , @($cells | ForEach-Object { Repair-OcrSpacing $_ })
     }
 
     # Tabel = minstens 2 kolommen en minstens 2 rijen met meer dan 1 gevulde cel.

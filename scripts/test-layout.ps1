@@ -41,6 +41,10 @@ Assert ($grid.Rows[1][0] -eq 'Zwembad pomp' -and $grid.Rows[1][1] -eq '12') 'woo
 $expected = '```' + "`r`nArtikel       Aantal`r`nZwembad pomp  12`r`nFilter        3`r`n" + '```'
 Assert ((Format-PlainText $grid) -eq $expected) 'tabel als uitgelijnde tekst tussen ``` voor chat'
 
+Assert ((Repair-OcrSpacing '15- 10-2026') -eq '15-10-2026') 'spatieherstel: losse spatie in datum weg'
+Assert ((Repair-OcrSpacing '15-10-202611:14') -eq '15-10-2026 11:14') 'spatieherstel: datum en tijd weer gescheiden'
+Assert ((Repair-OcrSpacing 'ART-00012345 10-2026') -eq 'ART-00012345 10-2026') 'spatieherstel: laat andere tekst ongemoeid'
+
 $text = @((W 'Dit' 0 0), (W 'is' 40 0), (W 'tekst' 65 0), (W 'nog' 0 30), (W 'een' 40 30), (W 'regel' 85 30))
 $grid = ConvertTo-Grid $text
 Assert (-not $grid.IsTable) 'lopende tekst wordt niet als tabel gezien'
