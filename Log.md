@@ -14,6 +14,32 @@ Voorbeeld van een entry:
 **Volgende stap:** [wat er logisch als eerste opgepakt wordt]
 -->
 
+## Tussentijdse update 2026-10-15 — gemiste woorden en spaties (lokaal, nog niet gepubliceerd)
+**Aanleiding:** Steffans test op een nieuwe WMS-tabel: een lege
+locatiecode-cel, "XXL" weg, "UV-C" → "UVC", "T5 40W" → "T540W". Op de
+opgeslagen screenshot kwamen alleen de spaties terug; de rest hing af van
+waar het kader viel. Nagebootst met 24 licht verschoven kaders: precies
+dezelfde fouten, plus soms "UV-C lamp TL 30W" helemaal weg.
+**Wat gedaan** (`src/DataPlakker.cs`, `Ocr`):
+- `RecoverMissed`: inkt die buiten alle gevonden woorden valt (vlekken van
+  letterformaat, per regel samengevoegd) wordt los gelezen; tot 3 rondes,
+  kort woord desnoods op 8x. Lijnen vallen af op hun vorm.
+- `RestoreSpaces`: een leeg stuk van ≥0,16 letterhoogte binnen een woord →
+  rechterdeel los lezen; is dat precies het eind van het woord, dan een
+  spatie. Nooit naast een "1" (die heeft vaak extra ruimte). Tekens
+  veranderen nooit.
+- Herlezen ook voor korte woorden in hoofdletters (`UVC`, `SSE`); was het
+  woord hoofdletters, dan blijft het hoofdletters.
+- `Isolate` vult de rand met de meest voorkomende kleur in het stuk (gaf
+  letters terug op een oranje gemarkeerde rij).
+- Twee nieuwe selftests (smalle spatie; gemist woord terugvinden). De
+  selftest ving een te lage spatiedrempel bij 11pt-tekst ("Zwem bad").
+**Gemeten** (lokaal): 96,0→96,4%, 95,1→96,7%, 96,3→97,0%; op de 24
+verschoven kaders valt geen woord meer weg (was: locatiecode, XXL, halve
+beschrijving). Tijd ongeveer gelijk (~2,5–3 s voor een grote tabel).
+**Nog open:** "50N" blijft "SON" (alle lezingen zeggen SON); in sommige
+kaders nog een spatie of streepje mis ("lampT5", "UVC").
+
 ## Tussentijdse update 2026-10-15 — kolom als woordenlijst: geprobeerd, niet ingebouwd
 Idee: een woord dat 1x in de kolom staat en op ≤2 tekens na lijkt op een
 woord dat er ≥2x staat, vervangen. Gemeten op drie WMS-screenshots: 1 cel

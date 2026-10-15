@@ -277,8 +277,166 @@ static class Ocr
     {
         if (engine.Value == null) throw new InvalidOperationException("Geen Windows-OCR-taal beschikbaar.");
         var words = ReadOnce(bmp, 4);
+        // Ook een los gelezen stuk kan weer een woord missen; dan nog een ronde.
+        for (int round = 0; round < 3 && RecoverMissed(bmp, words); round++) { }
         Reread(bmp, words);
+        RestoreSpaces(bmp, words);
         return words;
+    }
+
+    // Windows-OCR laat soms een heel woord weg, afhankelijk van waar het kader
+    // precies valt (gemeten: een locatiecode, "XXL", "UV-C lamp TL 30W").
+    // Daarom zoeken we tekst die buiten alle gevonden woorden valt: stukjes
+    // inkt van tekstformaat, per regel samengevoegd tot woorden, en lezen die
+    // los. Lijnen en randen vallen af op hun vorm.
+    internal static bool RecoverMissed(Bitmap bmp, List<Word> words)
+    {
+        if (words.Count == 0) return false;
+        double h = words.Select(w => w.H).OrderBy(x => x).ElementAt(words.Count / 2);
+        int width = bmp.Width, height = bmp.Height, stride;
+        byte[] px = Pixels(bmp, out stride);
+
+        var covered = new bool[width * height];
+        int pad = Math.Max(2, (int)(0.3 * h));
+        foreach (var w in words)
+            for (int y = Math.Max(0, (int)w.Y - pad); y < Math.Min(height, (int)(w.Y + w.H) + pad); y++)
+                for (int x = Math.Max(0, (int)w.X - pad); x < Math.Min(width, (int)(w.X + w.W) + pad); x++)
+                    covered[y * width + x] = true;
+
+        // Achtergrond per pixelregel = de meest voorkomende helderheid op die regel.
+        var ink = new bool[width * height];
+        var hist = new int[256];
+        for (int y = 0; y < height; y++)
+        {
+            Array.Clear(hist, 0, 256);
+            for (int x = 0; x < width; x++) hist[Lum(px, stride, x, y)]++;
+            int bg = Array.IndexOf(hist, hist.Max());
+            for (int x = 0; x < width; x++)
+                ink[y * width + x] = !covered[y * width + x] && Math.Abs(Lum(px, stride, x, y) - bg) > 60;
+        }
+
+        // Losse inktvlekken (aaneengesloten pixels) met hun omhullende rechthoek.
+        var blobs = new List<Rectangle>();
+        var stack = new Stack<int>();
+        for (int start = 0; start < ink.Length; start++)
+        {
+            if (!ink[start]) continue;
+            int x0 = int.MaxValue, y0 = int.MaxValue, x1 = 0, y1 = 0;
+            ink[start] = false; stack.Push(start);
+            while (stack.Count > 0)
+            {
+                int i = stack.Pop(), x = i % width, y = i / width;
+                x0 = Math.Min(x0, x); x1 = Math.Max(x1, x); y0 = Math.Min(y0, y); y1 = Math.Max(y1, y);
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        int nx = x + dx, ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= width || ny >= height || !ink[ny * width + nx]) continue;
+                        ink[ny * width + nx] = false; stack.Push(ny * width + nx);
+                    }
+            }
+            var b = Rectangle.FromLTRB(x0, y0, x1 + 1, y1 + 1);
+            // Hoger dan een letter, of lang en plat: een kader- of rasterlijn.
+            // Kleine vlekjes blijven: een streepje of punt hoort vaak bij een woord ("109-04"),
+            // en kleine cijfers raken elkaar vaak, dus breed mag.
+            if (b.Height <= 1.6 * h && !(b.Height <= 0.25 * h && b.Width > 2 * h)) blobs.Add(b);
+        }
+
+        // Vlekken op dezelfde regel met hooguit een spatie ertussen = één woord.
+        bool merged = true;
+        while (merged)
+        {
+            merged = false;
+            for (int i = 0; i < blobs.Count && !merged; i++)
+                for (int j = i + 1; j < blobs.Count && !merged; j++)
+                {
+                    Rectangle a = blobs[i], c = blobs[j];
+                    int overlap = Math.Min(a.Bottom, c.Bottom) - Math.Max(a.Top, c.Top);
+                    int gap = Math.Max(a.Left, c.Left) - Math.Min(a.Right, c.Right);
+                    if (overlap < 0.3 * Math.Min(a.Height, c.Height) || gap > 0.5 * h) continue;
+                    blobs[i] = Rectangle.Union(a, c); blobs.RemoveAt(j); merged = true;
+                }
+        }
+
+        int known = words.Count;
+        foreach (var b in blobs)
+        {
+            if (b.Height < 0.5 * h) continue;   // los streepje of puntje
+            Point o;
+            // Ruimer knippen: de rand van de gevonden woorden telde niet als inkt, dus
+            // een eerste of laatste letter kan half buiten de vlek vallen. Wat daardoor
+            // dubbel gelezen wordt, valt hieronder af.
+            using (var tile = Isolate(bmp, new Word("", b.X - pad, b.Y, b.Width - 1 + 2 * pad, b.Height - 1), out o))
+            {
+                if (tile == null) continue;
+                // Een heel kort woord ("XXL") leest Windows pas vanaf ~6x vergroot.
+                var found = ReadOnce(tile, 4);
+                if (found.Count == 0) found = ReadOnce(tile, 8);
+                foreach (var w in found)
+                {
+                    // Eén los teken zonder cijfer is meestal een icoontje (bv. een sorteerpijltje).
+                    if (!w.Text.Any(char.IsLetterOrDigit) || (w.Text.Length < 2 && !w.Text.Any(char.IsDigit))) continue;
+                    w.X += o.X; w.Y += o.Y;
+                    double cx = w.X + w.W / 2, cy = w.Y + w.H / 2;
+                    if (words.Take(known).Any(k => cx >= k.X && cx <= k.X + k.W && cy >= k.Y && cy <= k.Y + k.H)) continue;
+                    words.Add(w);
+                }
+            }
+        }
+        return words.Count > known;
+    }
+
+    static byte[] Pixels(Bitmap bmp, out int stride)
+    {
+        BitmapData data = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        stride = data.Stride;
+        var px = new byte[stride * bmp.Height];
+        Marshal.Copy(data.Scan0, px, 0, px.Length);
+        bmp.UnlockBits(data);
+        return px;
+    }
+
+    // Windows-OCR plakt woorden met een smalle spatie aan elkaar ("T5 40W" ->
+    // "T540W"). Een helemaal leeg stuk van minstens 0,16 letterhoogte komt
+    // binnen een woord bijna niet voor (gemeten: spaties in het WMS 0,17-0,34,
+    // gaten binnen woorden tot 0,15; alleen naast een "1" breder), tussen
+    // woorden wel. Op zo'n plek lezen we alles rechts ervan los; is dat precies
+    // het eind van het woord, dan komt daar een spatie. Tekens veranderen nooit.
+    static void RestoreSpaces(Bitmap bmp, List<Word> words)
+    {
+        int stride;
+        byte[] px = Pixels(bmp, out stride);
+        foreach (var w in words)
+        {
+            if (w.Text.Contains('_') || w.Text.Contains(' ')) continue;   // underscore-gat is geen spatie
+            int x0 = Math.Max(0, (int)Math.Floor(w.X)), x1 = Math.Min(bmp.Width - 1, (int)Math.Ceiling(w.X + w.W));
+            int y0 = Math.Max(0, (int)Math.Floor(w.Y)), y1 = Math.Min(bmp.Height - 1, (int)Math.Ceiling(w.Y + w.H));
+            int bgAt = Math.Max(0, y0 - 1) * stride + Math.Max(0, x0 - 1) * 4;
+            var cuts = new List<int>();   // begin van de inkt na elk leeg stuk
+            int run = 0; bool seenInk = false;
+            for (int x = x0; x <= x1; x++)
+            {
+                // Per kleurkanaal vergelijken: de gekleurde randjes van ClearType-tekst
+                // hebben bijna dezelfde helderheid als de achtergrond, maar zijn wel inkt.
+                bool ink = false;
+                for (int y = y0; y <= y1 && !ink; y++)
+                    for (int ch = 0; ch < 3 && !ink; ch++) ink = Math.Abs(px[y * stride + x * 4 + ch] - px[bgAt + ch]) > 13;
+                if (ink) { if (seenInk && run >= Math.Max(2, 0.16 * w.H)) cuts.Add(x); run = 0; seenInk = true; }
+                else run++;
+            }
+            var spaces = new List<int>();   // tekenposities waar een spatie hoort
+            foreach (int cut in cuts)
+                using (var tile = Isolate(bmp, new Word("", cut - 1, w.Y, x1 - cut + 1, w.H)))
+                {
+                    string right = tile == null ? "" : string.Concat(ReadOnce(tile, 4).Select(x => x.Text));
+                    int at = w.Text.Length - right.Length;
+                    if (right.Length > 0 && at > 0 &&
+                        string.Equals(right, w.Text.Substring(at), StringComparison.OrdinalIgnoreCase) &&
+                        w.Text[at - 1] != '1' && w.Text[at] != '1')   // een "1" heeft vaak extra ruimte ("16-2", "12")
+                        spaces.Add(at);
+                }
+            foreach (int at in spaces.Distinct().OrderByDescending(i => i)) w.Text = w.Text.Insert(at, " ");
+        }
     }
 
     // Windows-OCR gokt een woord mede op basis van de tekst eromheen, en gokt
@@ -290,10 +448,11 @@ static class Ocr
     // Verdeeld over alle processorkernen, anders duurt het te lang.
     static void Reread(Bitmap bmp, List<Word> words)
     {
-        // Alleen woorden met een cijfer erin (codes, maten, aantallen): bij gewone
-        // woorden helpt de context juist (gemeten: los gelezen werd "UV-C" "uv-c"
-        // en verdwenen underscores), en het scheelt veel tijd.
-        var tiles = words.Select(w => w.Text.Any(char.IsDigit) ? Isolate(bmp, w) : null).ToList();
+        // Alleen woorden met een cijfer erin (codes, maten, aantallen) en korte
+        // woorden in hoofdletters ("UVC" -> "UV-C", "SSE" -> "SS25"): bij gewone
+        // woorden helpt de context juist (gemeten: verdwenen underscores), en het
+        // scheelt veel tijd.
+        var tiles = words.Select(w => w.Text.Any(char.IsDigit) || Regex.IsMatch(w.Text, "^[A-Z-]{2,5}$") ? Isolate(bmp, w) : null).ToList();
         var reads = new string[words.Count, RereadScales.Length];
         // Per woord één thread: een plaatje kan niet door twee threads tegelijk gelezen worden.
         System.Threading.Tasks.Parallel.For(0, words.Count, w =>
@@ -312,7 +471,11 @@ static class Ocr
             var ranked = votes.GroupBy(v => v.ToUpperInvariant()).OrderByDescending(g => g.Count()).ToList();
             bool clearWinner = ranked[0].Count() >= 2 && (ranked.Count == 1 || ranked[1].Count() < ranked[0].Count());
             if (clearWinner && ranked[0].Key != words[w].Text.ToUpperInvariant())
-                words[w].Text = ranked[0].GroupBy(v => v).OrderByDescending(g => g.Count()).First().Key;
+                // Los gelezen komt een code soms in kleine letters terug ("uv-c");
+                // was het eerst helemaal hoofdletters, dan blijft dat zo.
+                words[w].Text = words[w].Text == words[w].Text.ToUpperInvariant()
+                    ? ranked[0].Key
+                    : ranked[0].GroupBy(v => v).OrderByDescending(g => g.Count()).First().Key;
             // Bij twijfel kan de kolom later nog kiezen (zie RepairToColumnPattern).
             words[w].Readings = votes.Distinct().ToList();
         }
@@ -322,15 +485,34 @@ static class Ocr
     // op een eigen plaatje zetten, zodat er geen letters van de buren meekomen.
     static Bitmap Isolate(Bitmap src, Word w)
     {
+        Point origin;
+        return Isolate(src, w, out origin);
+    }
+
+    // origin = waar linksboven van het nieuwe plaatje in de bron zou liggen.
+    static Bitmap Isolate(Bitmap src, Word w, out Point origin)
+    {
         var r = Rectangle.Intersect(
             Rectangle.FromLTRB((int)Math.Floor(w.X) - 1, (int)Math.Floor(w.Y) - 1, (int)Math.Ceiling(w.X + w.W) + 1, (int)Math.Ceiling(w.Y + w.H) + 1),
             new Rectangle(0, 0, src.Width, src.Height));
-        if (r.Width < 3 || r.Height < 3) return null;
         int m = Math.Max(4, r.Height / 2);
+        origin = new Point(r.Left - m, r.Top - m);
+        if (r.Width < 3 || r.Height < 3) return null;
         var tile = new Bitmap(r.Width + 2 * m, r.Height + 2 * m, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(tile))
         {
-            g.Clear(src.GetPixel(r.Left, r.Top));   // hoekje net buiten het woord = achtergrond
+            // Achtergrond = meest voorkomende kleur in het stuk, niet het hoekje erbuiten:
+            // bij een gekleurde markering achter de tekst is dat hoekje wit, en dan
+            // vallen letters die de rand van de markering raken weg.
+            var counts = new Dictionary<int, int>();
+            for (int y = r.Top; y < r.Bottom; y++)
+                for (int x = r.Left; x < r.Right; x++)
+                {
+                    int c = src.GetPixel(x, y).ToArgb(), n;
+                    counts.TryGetValue(c, out n);
+                    counts[c] = n + 1;
+                }
+            g.Clear(Color.FromArgb(counts.OrderByDescending(kv => kv.Value).First().Key));
             g.DrawImage(src, new Rectangle(m, m, r.Width, r.Height), r, GraphicsUnit.Pixel);
         }
         return tile;
@@ -773,6 +955,31 @@ static class SelfTest
         Assert(us == "ZONE_A_LEGBORD_GROOT", "OCR: underscores blijven staan (kreeg \"" + us + "\")");
         string ul = ReadLine(Line("Bekijk de levering hier", FontStyle.Underline));
         Assert(!ul.Contains("_"), "OCR: onderstreepte tekst krijgt geen underscores (kreeg \"" + ul + "\")");
+
+        // Smalle spatie (zoals in het WMS) blijft een spatie, gewone woorden blijven heel.
+        using (var bmp = new Bitmap(300, 40, PixelFormat.Format32bppArgb))
+        {
+            using (var g = Graphics.FromImage(bmp))
+            using (var font = new Font("Segoe UI", 8))
+            {
+                g.Clear(Color.White);
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+                g.DrawString("Philips lamp T5", font, Brushes.Black, 10, 12, StringFormat.GenericTypographic);
+                float w = g.MeasureString("Philips lamp T5", font, PointF.Empty, StringFormat.GenericTypographic).Width;
+                g.DrawString("40W Pizzaborstel", font, Brushes.Black, 10 + w + 3, 12, StringFormat.GenericTypographic);
+            }
+            string sp = ReadLine((Bitmap)bmp.Clone());
+            Assert(sp.Contains("T5 40W") && sp.Contains("Pizzaborstel"), "OCR: smalle spatie hersteld, woord heel (kreeg \"" + sp + "\")");
+        }
+
+        // Een woord dat de OCR mist, wordt alsnog los gelezen.
+        using (var bmp = Image(new[] { C(10, "Zwembadpomp"), C(260, "16-2-A-109-04-A") }))
+        {
+            var words = Ocr.Read(bmp);
+            words.RemoveAll(w => w.Text.Contains("109"));
+            Ocr.RecoverMissed(bmp, words);
+            Assert(words.Any(w => w.Text == "16-2-A-109-04-A"), "OCR: gemist woord wordt teruggevonden (kreeg \"" + string.Join(" ", words.Select(w => w.Text)) + "\")");
+        }
 
         // 3. Klembord
         grid = new Grid { IsTable = true };
