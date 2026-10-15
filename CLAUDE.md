@@ -23,7 +23,7 @@ levert een scherper beeld op dan zelf de puntjes invullen.
   twee, maar de plek waar de WHAT staat.
 
 ## Version control (GitHub)
-- Repo: [URL invullen per project]
+- Repo: https://github.com/steffan-hash/data-plakker
 - Ik werk op meerdere plekken, dus **bij start van elke sessie eerst
   `git pull`** om zeker te zijn dat je met de laatste versie werkt.
 - Commits: klein, functioneel gescheiden, met een boodschap die zegt wat
