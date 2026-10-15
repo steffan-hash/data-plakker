@@ -264,17 +264,84 @@ class Grid
 // Windows-OCR: afbeelding -> losse woorden met positie. Volledig lokaal.
 static class Ocr
 {
-    static OcrEngine engine;
+    // OCR in de talen van het Windows-profiel. Gemeten: Engels leest codes en
+    // gemengde tekst beter dan Nederlands, ook bij Nederlandse woorden.
+    // Eén motor per thread: één motor kan niet door meerdere threads tegelijk.
+    static readonly ThreadLocal<OcrEngine> engine = new ThreadLocal<OcrEngine>(() => OcrEngine.TryCreateFromUserProfileLanguages());
+
+    // Vergrotingen waarop elk woord nog eens los gelezen wordt (zie Reread).
+    static readonly int[] RereadScales = { 3, 6, 8 };
 
     public static List<Word> Read(Bitmap bmp)
+    {
+        if (engine.Value == null) throw new InvalidOperationException("Geen Windows-OCR-taal beschikbaar.");
+        var words = ReadOnce(bmp, 4);
+        Reread(bmp, words);
+        return words;
+    }
+
+    // Windows-OCR gokt een woord mede op basis van de tekst eromheen, en gokt
+    // in tabellen met codes soms mis ("16-2-A-118-05" -> "16-24-118-05",
+    // "zwembad" -> "muembad"). Los gelezen, zonder buren, gaat dat vaak wél
+    // goed. Daarom wordt elk woord nog 3x los gelezen (precies uitgeknipt, met
+    // lege achtergrond eromheen) en wint de lezing die het vaakst voorkomt:
+    // minstens 2 van de 4 en geen gelijkspel, anders blijft de eerste lezing.
+    // Verdeeld over alle processorkernen, anders duurt het te lang.
+    static void Reread(Bitmap bmp, List<Word> words)
+    {
+        // Alleen woorden met een cijfer erin (codes, maten, aantallen): bij gewone
+        // woorden helpt de context juist (gemeten: los gelezen werd "UV-C" "uv-c"
+        // en verdwenen underscores), en het scheelt veel tijd.
+        var tiles = words.Select(w => w.Text.Any(char.IsDigit) ? Isolate(bmp, w) : null).ToList();
+        var reads = new string[words.Count, RereadScales.Length];
+        // Per woord één thread: een plaatje kan niet door twee threads tegelijk gelezen worden.
+        System.Threading.Tasks.Parallel.For(0, words.Count, w =>
+        {
+            if (tiles[w] == null) return;
+            for (int s = 0; s < RereadScales.Length; s++)
+                reads[w, s] = string.Join(" ", ReadOnce(tiles[w], RereadScales[s]).Select(x => x.Text));
+        });
+        for (int w = 0; w < words.Count; w++)
+        {
+            if (tiles[w] == null) continue;
+            tiles[w].Dispose();
+            var votes = new List<string> { words[w].Text };
+            for (int s = 0; s < RereadScales.Length; s++) if (!string.IsNullOrEmpty(reads[w, s])) votes.Add(reads[w, s]);
+            // Verschil alleen in hoofd-/kleine letters telt niet als andere lezing.
+            var ranked = votes.GroupBy(v => v.ToUpperInvariant()).OrderByDescending(g => g.Count()).ToList();
+            bool clearWinner = ranked[0].Count() >= 2 && (ranked.Count == 1 || ranked[1].Count() < ranked[0].Count());
+            if (clearWinner && ranked[0].Key != words[w].Text.ToUpperInvariant())
+                words[w].Text = ranked[0].GroupBy(v => v).OrderByDescending(g => g.Count()).First().Key;
+        }
+    }
+
+    // Eén woord precies uitknippen en met een rand achtergrondkleur eromheen
+    // op een eigen plaatje zetten, zodat er geen letters van de buren meekomen.
+    static Bitmap Isolate(Bitmap src, Word w)
+    {
+        var r = Rectangle.Intersect(
+            Rectangle.FromLTRB((int)Math.Floor(w.X) - 1, (int)Math.Floor(w.Y) - 1, (int)Math.Ceiling(w.X + w.W) + 1, (int)Math.Ceiling(w.Y + w.H) + 1),
+            new Rectangle(0, 0, src.Width, src.Height));
+        if (r.Width < 3 || r.Height < 3) return null;
+        int m = Math.Max(4, r.Height / 2);
+        var tile = new Bitmap(r.Width + 2 * m, r.Height + 2 * m, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(tile))
+        {
+            g.Clear(src.GetPixel(r.Left, r.Top));   // hoekje net buiten het woord = achtergrond
+            g.DrawImage(src, new Rectangle(m, m, r.Width, r.Height), r, GraphicsUnit.Pixel);
+        }
+        return tile;
+    }
+
+    static List<Word> ReadOnce(Bitmap bmp, int maxScale)
     {
         // Kleine schermtekst wordt slecht herkend; vergroten helpt Windows-OCR
         // flink. Gemeten op 8pt-tabeltekst: 2x gaf 10 foute cellen, 4x nog 3.
         // Op een echte WMS-screenshot scoorde 4x ook beter dan 3x en 5x, en
         // zacht vergroten (bicubic) veel beter dan scherp of zwart-wit.
-        // Zo groot mogelijk tot 4x, binnen de maximale OCR-afmeting.
+        // Zo groot mogelijk tot maxScale, binnen de maximale OCR-afmeting.
         int max = (int)OcrEngine.MaxImageDimension;
-        int scale = Math.Max(1, Math.Min(4, max / Math.Max(bmp.Width, bmp.Height)));
+        int scale = Math.Max(1, Math.Min(maxScale, max / Math.Max(bmp.Width, bmp.Height)));
 
         SoftwareBitmap soft;
         byte[] px;
@@ -296,12 +363,8 @@ static class Ocr
             soft = SoftwareBitmap.CreateCopyFromBuffer(CryptographicBuffer.CreateFromByteArray(px), BitmapPixelFormat.Bgra8, width, height);
         }
 
-        // OCR in de talen van het Windows-profiel. Gemeten: Engels leest
-        // codes en gemengde tekst beter dan Nederlands, ook bij Nederlandse woorden.
-        if (engine == null) engine = OcrEngine.TryCreateFromUserProfileLanguages();
-        if (engine == null) throw new InvalidOperationException("Geen Windows-OCR-taal beschikbaar.");
         OcrResult result;
-        using (soft) result = Wait(engine.RecognizeAsync(soft));
+        using (soft) result = Wait(engine.Value.RecognizeAsync(soft));
 
         // Alleen losse woorden + positie bewaren; de regels die Windows zelf
         // maakt negeren we, want die plakken tabelcellen aan elkaar.

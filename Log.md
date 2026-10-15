@@ -14,6 +14,23 @@ Voorbeeld van een entry:
 **Volgende stap:** [wat er logisch als eerste opgepakt wordt]
 -->
 
+## Tussentijdse update 2026-10-15 — woorden met cijfers los herlezen (stemmen)
+**Aanleiding:** Windows-OCR gokt codes mede op basis van de buren en las
+korte locatiecodes structureel fout (`-A-` als `4`). Pixelanalyse: de cel
+die fout ging en een cel die goed ging hebben exact dezelfde pixels voor dat
+stuk; alleen de context verschilt.
+**Wat gedaan:** elk woord mét een cijfer wordt nog 3x los gelezen (3x/6x/8x,
+precies uitgeknipt met lege achtergrond eromheen); de lezing die het vaakst
+voorkomt wint (≥2 van 4, geen gelijkspel; hoofd/kleine letters tellen niet
+als verschil). Parallel over alle kernen, één OCR-motor per thread (één
+motor tegelijk vanuit meerdere threads gaf "OCR mislukt: Error").
+**Gemeten** op twee WMS-screenshots (lokaal): 94,5% → 95,5% en 93,3% → 94,9%.
+Tijd voor een grote tabel: ~1,3 s → ~1,5–2,5 s.
+**Bewust niet:** herlezen van alle woorden. Gemeten: dat brak underscores en
+hoofdletters (`UV-C` → `uv-c`) en scoorde slechter (86%).
+**Ook vastgesteld:** spaties die verdwijnen (`400x207x122-Frame`) komen uit de
+OCR zelf, niet uit de underscore-herkenning.
+
 ## Tussentijdse update 2026-10-15 — herkenning op echte WMS-screenshot: 54% → 94,5%
 **Meetmethode:** een echte WMS-screenshot van Steffan (47 rijen × 10
 kolommen) cel voor cel overgetypt als juiste antwoord, en elke variant
