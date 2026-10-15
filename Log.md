@@ -14,6 +14,15 @@ Voorbeeld van een entry:
 **Volgende stap:** [wat er logisch als eerste opgepakt wordt]
 -->
 
+## Tussentijdse update 2026-10-15 — kolom als woordenlijst: geprobeerd, niet ingebouwd
+Idee: een woord dat 1x in de kolom staat en op ≤2 tekens na lijkt op een
+woord dat er ≥2x staat, vervangen. Gemeten op drie WMS-screenshots: 1 cel
+slechter, 2 gelijk. Eén goede reparatie (`LIV-C` → `UV-C`), maar ook foute:
+`zwart` → `watt`, `panelen` → `paneel`, en haakjes/komma's verdwenen. De
+OCR maakt dezelfde fout bovendien consequent (`muembad` 2x, net zo vaak als
+`zwembad`), dus een leesfout is uit de tabel alleen niet van een echt ander
+woord te onderscheiden. Teruggedraaid; geïnstalleerde versie ongewijzigd.
+
 ## Tussentijdse update 2026-10-15 — bij twijfel kiest de kolom (lokaal, nog niet gepubliceerd)
 **Aanleiding:** drie korte locatiecodes bleven fout; debug liet een gelijkspel
 zien (normale + 6x-lezing `16-24-116-00` tegen 3x + 8x `16-2-A-116-OO`).
